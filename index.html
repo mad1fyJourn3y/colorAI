@@ -293,8 +293,6 @@
             async init() {
                 this.startBtn.addEventListener('click', () => this.toggleCamera());
                 this.flashBtn.addEventListener('click', () => this.toggleFlash());
-                
-                // Enable flash button only when camera is active
                 this.flashBtn.disabled = true;
                 this.updateStatus('Ready to scan colors');
             }
@@ -325,7 +323,6 @@
                     this.video.srcObject = this.stream;
                     await this.waitForVideoReady();
                     
-                    // Enable flash button and try to get torch capability
                     this.flashBtn.disabled = false;
                     this.checkFlashCapability();
                     
@@ -338,7 +335,7 @@
                     
                 } catch (error) {
                     console.error('Camera error:', error);
-                    this.updateStatus('Camera access denied or unavailable');
+                    this.updateStatus('Camera access denied');
                     this.startBtn.textContent = 'Start Camera';
                     this.startBtn.disabled = false;
                     this.flashBtn.disabled = true;
@@ -353,7 +350,6 @@
                 
                 if (this.animationId) {
                     cancelAnimationFrame(this.animationId);
-                    this.animationId = null;
                 }
                 
                 this.isScanning = false;
@@ -373,20 +369,17 @@
             
             async checkFlashCapability() {
                 const videoTrack = this.stream.getVideoTracks()[0];
-                if (videoTrack && videoTrack.getCapabilities) {
+                if (videoTrack?.getCapabilities) {
                     try {
                         const capabilities = videoTrack.getCapabilities();
                         if (capabilities.torch) {
                             this.flashTrack = videoTrack;
-                            this.updateStatus('✅ Flash available - Tap 🔦 for better lighting');
+                            this.updateStatus('✅ Flash ready - Tap 🔦 for accurate colors');
                             return;
                         }
-                    } catch (e) {
-                        console.log('Flash capability check failed:', e);
-                    }
+                    } catch (e) {}
                 }
-                this.flashBtn.title = 'Flash not available on this device';
-                this.updateStatus('Scanning center color... (Flash N/A)');
+                this.flashBtn.title = 'Flash N/A';
             }
             
             async toggleFlash() {
@@ -407,32 +400,20 @@
                         this.flashBtn.textContent = '🔦 Off';
                     }
                 } catch (error) {
-                    console.error('Flash toggle error:', error);
-                    this.updateStatus('Flash not supported');
+                    console.error('Flash error:', error);
                 }
             }
             
             waitForVideoReady() {
                 return new Promise((resolve) => {
-                    if (this.video.readyState === 4) {
-                        resolve();
-                        return;
-                    }
-                    
-                    const checkReady = () => {
-                        if (this.video.readyState === 4) {
-                            resolve();
-                        } else {
-                            setTimeout(checkReady, 100);
-                        }
-                    };
-                    checkReady();
+                    if (this.video.readyState === 4) return resolve();
+                    const check = () => this.video.readyState === 4 ? resolve() : setTimeout(check, 100);
+                    check();
                 });
             }
             
             scanLoop() {
                 if (!this.isScanning) return;
-                
                 this.updateColor();
                 this.animationId = requestAnimationFrame(() => this.scanLoop());
             }
@@ -440,16 +421,14 @@
             updateColor() {
                 const centerX = Math.floor(this.video.videoWidth / 2);
                 const centerY = Math.floor(this.video.videoHeight / 2);
-                const radius = 25; // Slightly larger sampling area for better accuracy
+                const radius = 25;
                 
                 this.canvas.width = this.video.videoWidth;
                 this.canvas.height = this.video.videoHeight;
-                
                 this.ctx.drawImage(this.video, 0, 0);
                 
                 let r = 0, g = 0, b = 0, count = 0;
                 
-                // Sample more densely in center for accuracy
                 for (let x = centerX - radius; x <= centerX + radius; x += 2) {
                     for (let y = centerY - radius; y <= centerY + radius; y += 2) {
                         if (x >= 0 && x < this.canvas.width && y >= 0 && y < this.canvas.height) {
@@ -475,52 +454,74 @@
                 this.rgbValues.textContent = `RGB: ${avgR}, ${avgG}, ${avgB}`;
             }
             
+            // FIXED COLOR DETECTION - Much more accurate!
             getColorName(r, g, b) {
-                const colors = {
-                    black: [0,0,0],
-                    white: [255,255,255],
-                    red: [200,50,50],
-                    green: [50,200,50],
-                    blue: [50,50,200],
-                    yellow: [255,255,0],
-                    orange: [255,165,0],
-                    purple: [128,0,128],
-                    pink: [255,192,203],
-                    brown: [165,42,42],
-                    gray: [128,128,128],
-                    darkred: [139,0,0],
-                    lime: [50,205,50],
-                    navy: [0,0,128],
-                    gold: [255,215,0],
-                    maroon: [128,0,0],
-                    teal: [0,128,128],
-                    olive: [128,128,0],
-                    lightblue: [173,216,230],
-                    lightgreen: [144,238,144],
-                    lightpink: [255,182,193],
-                    lightyellow: [255,255,224],
-                    lavender: [230,230,250],
-                    cyan: [0,255,255],
-                    magenta: [255,0,255]
-                };
+                // Calculate luminance for brightness classification
+                const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+                const saturation = Math.max(r, g, b) - Math.min(r, g, b);
+                
+                // Reject near-grays (low saturation)
+                if (saturation < 35) {
+                    if (luminance < 0.15) return 'Black';
+                    if (luminance > 0.85) return 'White';
+                    return `Gray ${Math.round(luminance * 100)}%`;
+                }
+                
+                // Primary colors with tighter thresholds
+                const colors = [
+                    // High saturation primaries first
+                    { name: 'Red', rgb: [255, 60, 60], maxDiff: 110 },
+                    { name: 'Green', rgb: [60, 255, 60], maxDiff: 110 },
+                    { name: 'Blue', rgb: [60, 60, 255], maxDiff: 110 },
+                    { name: 'Yellow', rgb: [255, 255, 60], maxDiff: 100 },
+                    { name: 'Cyan', rgb: [60, 255, 255], maxDiff: 100 },
+                    { name: 'Magenta', rgb: [255, 60, 255], maxDiff: 100 },
+                    
+                    // Orange/secondary
+                    { name: 'Orange', rgb: [255, 140, 40], maxDiff: 90 },
+                    { name: 'Purple', rgb: [180, 70, 220], maxDiff: 95 },
+                    { name: 'Pink', rgb: [255, 130, 180], maxDiff: 85 },
+                    { name: 'Brown', rgb: [170, 90, 40], maxDiff: 85 },
+                    
+                    // Greens
+                    { name: 'Lime', rgb: [180, 255, 80], maxDiff: 90 },
+                    { name: 'Olive', rgb: [160, 160, 60], maxDiff: 85 },
+                    { name: 'Teal', rgb: [60, 200, 160], maxDiff: 90 },
+                    
+                    // Blues/Purples
+                    { name: 'Navy', rgb: [40, 60, 160], maxDiff: 85 },
+                    { name: 'Lavender', rgb: [200, 180, 240], maxDiff: 80 },
+                    
+                    // Specialized
+                    { name: 'Gold', rgb: [255, 215, 60], maxDiff: 85 },
+                    { name: 'Maroon', rgb: [180, 50, 60], maxDiff: 85 }
+                ];
                 
                 let closestColor = 'Unique Color';
                 let minDiff = Infinity;
                 
-                for (const [name, ref] of Object.entries(colors)) {
+                for (const { name, rgb: [tr, tg, tb], maxDiff } of colors) {
                     const diff = Math.sqrt(
-                        Math.pow(r - ref[0], 2) + 
-                        Math.pow(g - ref[1], 2) + 
-                        Math.pow(b - ref[2], 2)
+                        Math.pow(r - tr, 2) + 
+                        Math.pow(g - tg, 2) + 
+                        Math.pow(b - tb, 2)
                     );
                     
-                    if (diff < minDiff) {
+                    // Only consider if within reasonable distance AND has enough saturation
+                    if (diff < minDiff && diff <= maxDiff && saturation > 25) {
                         minDiff = diff;
                         closestColor = name;
                     }
                 }
                 
-                return closestColor.charAt(0).toUpperCase() + closestColor.slice(1);
+                // Brightness modifiers
+                if (luminance < 0.4 && closestColor !== 'Black') {
+                    closestColor = 'Dark ' + closestColor;
+                } else if (luminance > 0.75 && closestColor !== 'White') {
+                    closestColor = 'Light ' + closestColor;
+                }
+                
+                return closestColor;
             }
             
             updateStatus(message) {
@@ -528,9 +529,7 @@
             }
         }
         
-        window.addEventListener('load', () => {
-            new ColorAI();
-        });
+        window.addEventListener('load', () => new ColorAI());
     </script>
 </body>
 </html>
