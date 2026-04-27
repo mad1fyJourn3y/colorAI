@@ -1,233 +1,466 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>ColorAI</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ColorAI - Real-time Color Detection</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-<style>
-body {
-    margin: 0;
-    background: black;
-    overflow: hidden;
-    font-family: Arial, sans-serif;
-}
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            overflow-x: hidden;
+        }
 
-/* Camera */
-video {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    object-fit: cover;
-}
+        .container {
+            text-align: center;
+            max-width: 400px;
+            width: 90vw;
+            padding: 20px;
+        }
 
-/* Overlay */
-.overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.15);
-}
+        .title {
+            font-size: 2.2rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #fff, #f0f0f0);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
 
-/* Center box */
-.box {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 220px;
-    height: 220px;
-    transform: translate(-50%, -50%);
-    border: 2px solid rgba(255,255,255,0.7);
-    border-radius: 18px;
-}
+        .subtitle {
+            font-size: 1rem;
+            opacity: 0.9;
+            margin-bottom: 30px;
+        }
 
-/* Target circle */
-.circle {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 70px;
-    height: 70px;
-    transform: translate(-50%, -50%);
-    border: 3px solid red;
-    border-radius: 50%;
-}
+        .video-container {
+            position: relative;
+            width: 100%;
+            height: 250px;
+            border-radius: 20px;
+            overflow: hidden;
+            margin-bottom: 25px;
+            background: #000;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        }
 
-/* Bottom panel */
-.panel {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    padding: 14px;
-    background: rgba(0,0,0,0.65);
-    color: white;
-    text-align: center;
-    backdrop-filter: blur(10px);
-}
+        #video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
 
-.colorBox {
-    width: 45px;
-    height: 45px;
-    margin: 10px auto;
-    border-radius: 10px;
-    border: 2px solid white;
-}
+        .center-circle {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 80px;
+            height: 80px;
+            border: 3px solid rgba(255,255,255,0.6);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            box-shadow: 0 0 20px rgba(255,255,255,0.4);
+        }
 
-/* Start button */
-button {
-    position: fixed;
-    top: 15px;
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 10px 18px;
-    border: none;
-    border-radius: 10px;
-    background: white;
-    font-weight: bold;
-    cursor: pointer;
-}
-</style>
+        .color-preview {
+            width: 120px;
+            height: 120px;
+            border-radius: 20px;
+            margin: 0 auto 20px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+            border: 3px solid rgba(255,255,255,0.2);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .color-preview::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            border-radius: 17px;
+            padding: 2px;
+            background: linear-gradient(45deg, transparent, rgba(255,255,255,0.1), transparent);
+            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            mask-composite: exclude;
+            animation: shimmer 2s infinite;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .color-preview.scanning::after {
+            opacity: 1;
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%) translateY(-100%) rotate(45deg); }
+            100% { transform: translateX(100%) translateY(100%) rotate(45deg); }
+        }
+
+        .color-name {
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            min-height: 1.8rem;
+            opacity: 0.9;
+        }
+
+        .rgb-values {
+            font-size: 1.1rem;
+            font-family: 'SF Mono', Monaco, monospace;
+            opacity: 0.8;
+            background: rgba(255,255,255,0.1);
+            padding: 12px 20px;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .controls {
+            margin-top: 25px;
+        }
+
+        .btn {
+            background: rgba(255,255,255,0.2);
+            backdrop-filter: blur(10px);
+            border: 2px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 25px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-width: 140px;
+            user-select: none;
+        }
+
+        .btn:hover {
+            background: rgba(255,255,255,0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .status {
+            margin-top: 15px;
+            font-size: 0.9rem;
+            opacity: 0.7;
+            min-height: 1.2rem;
+        }
+
+        @media (max-width: 480px) {
+            .title {
+                font-size: 1.8rem;
+            }
+            
+            .video-container {
+                height: 220px;
+            }
+            
+            .color-preview {
+                width: 100px;
+                height: 100px;
+            }
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
 </head>
-
 <body>
+    <div class="container">
+        <h1 class="title">ColorAI</h1>
+        <p class="subtitle">Real-time color detection for colorblind users</p>
+        
+        <div class="video-container">
+            <video id="video" autoplay muted playsinline></video>
+            <div class="center-circle"></div>
+        </div>
+        
+        <div class="color-preview" id="colorPreview"></div>
+        
+        <div class="color-name" id="colorName">Tap Start to begin</div>
+        <div class="rgb-values" id="rgbValues">RGB: --, --, --</div>
+        
+        <div class="controls">
+            <button class="btn" id="startBtn">Start Camera</button>
+            <div class="status" id="status"></div>
+        </div>
+    </div>
 
-<button id="startBtn">Start ColorAI</button>
-
-<video id="video" autoplay playsinline></video>
-<canvas id="canvas" style="display:none;"></canvas>
-
-<div class="overlay"></div>
-<div class="box"></div>
-<div class="circle"></div>
-
-<div class="panel">
-    <div id="name">Color: -</div>
-    <div id="rgb">RGB: -</div>
-    <div class="colorBox" id="preview"></div>
-</div>
-
-<script>
-const video = document.getElementById("video");
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
-
-const nameEl = document.getElementById("name");
-const rgbEl = document.getElementById("rgb");
-const preview = document.getElementById("preview");
-const button = document.getElementById("startBtn");
-
-let running = false;
-
-/* START CAMERA (FIXED FOR GITHUB PAGES) */
-button.addEventListener("click", async () => {
-
-    try {
-        console.log("Requesting camera...");
-
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { ideal: "environment" } }
+    <script>
+        class ColorAI {
+            constructor() {
+                this.video = document.getElementById('video');
+                this.colorPreview = document.getElementById('colorPreview');
+                this.colorName = document.getElementById('colorName');
+                this.rgbValues = document.getElementById('rgbValues');
+                this.startBtn = document.getElementById('startBtn');
+                this.status = document.getElementById('status');
+                
+                this.stream = null;
+                this.animationId = null;
+                this.isScanning = false;
+                this.canvas = document.createElement('canvas');
+                this.ctx = this.canvas.getContext('2d');
+                
+                this.init();
+            }
+            
+            async init() {
+                this.startBtn.addEventListener('click', () => this.toggleCamera());
+                this.updateStatus('Ready to scan colors');
+            }
+            
+            async toggleCamera() {
+                if (this.isScanning) {
+                    this.stopScanning();
+                } else {
+                    await this.startScanning();
+                }
+            }
+            
+            async startScanning() {
+                try {
+                    this.startBtn.disabled = true;
+                    this.startBtn.textContent = 'Loading...';
+                    this.updateStatus('Requesting camera permission...');
+                    
+                    // Request camera with specific constraints for performance
+                    this.stream = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            facingMode: 'environment',
+                            width: { ideal: 640 },
+                            height: { ideal: 480 }
+                        }
+                    });
+                    
+                    this.video.srcObject = this.stream;
+                    
+                    // Wait for video to be ready
+                    await this.waitForVideoReady();
+                    
+                    this.startBtn.textContent = 'Stop Camera';
+                    this.startBtn.disabled = false;
+                    this.isScanning = true;
+                    this.updateStatus('Scanning center color...');
+                    
+                    this.scanLoop();
+                    
+                } catch (error) {
+                    console.error('Camera error:', error);
+                    this.updateStatus('Camera access denied or unavailable');
+                    this.startBtn.textContent = 'Start Camera';
+                    this.startBtn.disabled = false;
+                }
+            }
+            
+            stopScanning() {
+                if (this.stream) {
+                    this.stream.getTracks().forEach(track => track.stop());
+                    this.stream = null;
+                }
+                
+                if (this.animationId) {
+                    cancelAnimationFrame(this.animationId);
+                    this.animationId = null;
+                }
+                
+                this.isScanning = false;
+                this.startBtn.textContent = 'Start Camera';
+                this.updateStatus('Camera stopped');
+                
+                // Reset UI
+                this.colorPreview.style.background = '#333';
+                this.colorName.textContent = 'Tap Start to begin';
+                this.rgbValues.textContent = 'RGB: --, --, --';
+                this.colorPreview.classList.remove('scanning');
+            }
+            
+            waitForVideoReady() {
+                return new Promise((resolve) => {
+                    if (this.video.readyState === 4) {
+                        resolve();
+                        return;
+                    }
+                    
+                    const checkReady = () => {
+                        if (this.video.readyState === 4) {
+                            resolve();
+                        } else {
+                            setTimeout(checkReady, 100);
+                        }
+                    };
+                    checkReady();
+                });
+            }
+            
+            scanLoop() {
+                if (!this.isScanning) return;
+                
+                this.updateColor();
+                this.animationId = requestAnimationFrame(() => this.scanLoop());
+            }
+            
+            updateColor() {
+                const centerX = Math.floor(this.video.videoWidth / 2);
+                const centerY = Math.floor(this.video.videoHeight / 2);
+                const radius = 20; // Sample area radius
+                
+                // Set canvas size to match video
+                this.canvas.width = this.video.videoWidth;
+                this.canvas.height = this.video.videoHeight;
+                
+                // Draw current video frame
+                this.ctx.drawImage(this.video, 0, 0);
+                
+                // Sample multiple pixels in center area for more accurate color
+                let r = 0, g = 0, b = 0, count = 0;
+                
+                for (let x = centerX - radius; x <= centerX + radius; x += 4) {
+                    for (let y = centerY - radius; y <= centerY + radius; y += 4) {
+                        if (x >= 0 && x < this.canvas.width && y >= 0 && y < this.canvas.height) {
+                            const data = this.ctx.getImageData(x, y, 1, 1).data;
+                            r += data[0];
+                            g += data[1];
+                            b += data[2];
+                            count++;
+                        }
+                    }
+                }
+                
+                const avgR = Math.round(r / count);
+                const avgG = Math.round(g / count);
+                const avgB = Math.round(b / count);
+                
+                const color = `rgb(${avgR}, ${avgG}, ${avgB})`;
+                const hex = this.rgbToHex(avgR, avgG, avgB);
+                const name = this.getColorName(avgR, avgG, avgB);
+                
+                // Update UI
+                this.colorPreview.style.background = color;
+                this.colorPreview.classList.add('scanning');
+                this.colorName.textContent = name;
+                this.rgbValues.textContent = `RGB: ${avgR}, ${avgG}, ${avgB}`;
+            }
+            
+            rgbToHex(r, g, b) {
+                return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+            }
+            
+            getColorName(r, g, b) {
+                const colors = {
+                    // Primary colors
+                    black: [0,0,0],
+                    white: [255,255,255],
+                    red: [200,50,50],
+                    green: [50,200,50],
+                    blue: [50,50,200],
+                    yellow: [255,255,0],
+                    orange: [255,165,0],
+                    purple: [128,0,128],
+                    pink: [255,192,203],
+                    brown: [165,42,42],
+                    gray: [128,128,128],
+                    
+                    // Shades
+                    darkred: [139,0,0],
+                    lime: [50,205,50],
+                    navy: [0,0,128],
+                    gold: [255,215,0],
+                    maroon: [128,0,0],
+                    teal: [0,128,128],
+                    olive: [128,128,0],
+                    
+                    // Pastels
+                    lightblue: [173,216,230],
+                    lightgreen: [144,238,144],
+                    lightpink: [255,182,193],
+                    lightyellow: [255,255,224],
+                    lavender: [230,230,250]
+                };
+                
+                let closestColor = 'Unknown';
+                let minDiff = Infinity;
+                
+                for (const [name, ref] of Object.entries(colors)) {
+                    const diff = Math.sqrt(
+                        Math.pow(r - ref[0], 2) + 
+                        Math.pow(g - ref[1], 2) + 
+                        Math.pow(b - ref[2], 2)
+                    );
+                    
+                    if (diff < minDiff) {
+                        minDiff = diff;
+                        closestColor = name;
+                    }
+                }
+                
+                // Threshold for "unknown" colors
+                if (minDiff > 120) {
+                    return 'Unique Color';
+                }
+                
+                return closestColor.charAt(0).toUpperCase() + closestColor.slice(1);
+            }
+            
+            updateStatus(message) {
+                this.status.textContent = message;
+            }
+        }
+        
+        // Initialize when page loads
+        window.addEventListener('load', () => {
+            new ColorAI();
         });
-
-        video.srcObject = stream;
-        await video.play();
-
-        running = true;
-        requestAnimationFrame(scan);
-
-        console.log("Camera started");
-
-    } catch (err) {
-        console.log("Back camera failed, trying default...", err);
-
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: true
-            });
-
-            video.srcObject = stream;
-            await video.play();
-
-            running = true;
-            requestAnimationFrame(scan);
-
-        } catch (err2) {
-            console.error(err2);
-            alert("Camera blocked. Please allow permissions in browser settings.");
-        }
-    }
-});
-
-/* BETTER COLOR DETECTION */
-function getColor(r,g,b){
-
-    let max = Math.max(r,g,b);
-    let min = Math.min(r,g,b);
-    let diff = max - min;
-
-    if (max < 50) return "Black";
-    if (diff < 15 && max > 200) return "White";
-    if (diff < 15) return "Gray";
-
-    if (r > g && r > b) {
-        if (g > 120) return "Orange";
-        return "Red";
-    }
-
-    if (g > r && g > b) {
-        if (b > 120) return "Teal/Cyan";
-        return "Green";
-    }
-
-    if (b > r && b > g) return "Blue";
-
-    if (r > 200 && g > 200) return "Yellow";
-
-    return "Unknown";
-}
-
-/* SCAN LOOP */
-function scan(){
-
-    if(!running) return;
-
-    if(video.readyState === 4){
-
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-
-        ctx.drawImage(video,0,0);
-
-        const size = 70;
-        const x = canvas.width/2 - size/2;
-        const y = canvas.height/2 - size/2;
-
-        const data = ctx.getImageData(x,y,size,size).data;
-
-        let r=0,g=0,b=0;
-
-        for(let i=0;i<data.length;i+=4){
-            r += data[i];
-            g += data[i+1];
-            b += data[i+2];
-        }
-
-        let total = data.length/4;
-        r = Math.floor(r/total);
-        g = Math.floor(g/total);
-        b = Math.floor(b/total);
-
-        const color = getColor(r,g,b);
-
-        nameEl.innerText = "Color: " + color;
-        rgbEl.innerText = `RGB: ${r}, ${g}, ${b}`;
-        preview.style.background = `rgb(${r},${g},${b})`;
-    }
-
-    requestAnimationFrame(scan);
-}
-</script>
-
+        
+        // Handle page visibility change to pause/resume
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                // Pause video when tab is hidden
+                const video = document.getElementById('video');
+                video.pause();
+            }
+        });
+    </script>
 </body>
 </html>
