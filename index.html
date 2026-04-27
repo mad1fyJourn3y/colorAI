@@ -23,7 +23,7 @@ video {
     object-fit: cover;
 }
 
-/* Dark overlay for readability */
+/* Overlay */
 .overlay {
     position: fixed;
     inset: 0;
@@ -39,11 +39,10 @@ video {
     height: 220px;
     transform: translate(-50%, -50%);
     border: 2px solid rgba(255,255,255,0.7);
-    border-radius: 20px;
-    box-shadow: 0 0 20px rgba(0,0,0,0.5);
+    border-radius: 18px;
 }
 
-/* Circle target */
+/* Target circle */
 .circle {
     position: absolute;
     top: 50%;
@@ -55,27 +54,28 @@ video {
     border-radius: 50%;
 }
 
-/* Bottom info panel */
+/* Bottom panel */
 .panel {
     position: fixed;
     bottom: 0;
     left: 0;
     width: 100%;
-    padding: 15px;
-    background: rgba(0,0,0,0.6);
+    padding: 14px;
+    background: rgba(0,0,0,0.65);
     color: white;
     text-align: center;
     backdrop-filter: blur(10px);
 }
 
 .colorBox {
-    width: 40px;
-    height: 40px;
+    width: 45px;
+    height: 45px;
     margin: 10px auto;
-    border-radius: 8px;
+    border-radius: 10px;
     border: 2px solid white;
 }
 
+/* Start button */
 button {
     position: fixed;
     top: 15px;
@@ -86,16 +86,17 @@ button {
     border-radius: 10px;
     background: white;
     font-weight: bold;
+    cursor: pointer;
 }
 </style>
 </head>
 
 <body>
 
-<button onclick="start()">Start ColorAI</button>
+<button id="startBtn">Start ColorAI</button>
 
 <video id="video" autoplay playsinline></video>
-<canvas id="canvas"></canvas>
+<canvas id="canvas" style="display:none;"></canvas>
 
 <div class="overlay"></div>
 <div class="box"></div>
@@ -115,39 +116,50 @@ const ctx = canvas.getContext("2d");
 const nameEl = document.getElementById("name");
 const rgbEl = document.getElementById("rgb");
 const preview = document.getElementById("preview");
+const button = document.getElementById("startBtn");
 
-function start() {
+let running = false;
 
-    navigator.mediaDevices.getUserMedia({
-        video: {
-            facingMode: { ideal: "environment" }
-        }
-    })
-    .then(stream => {
-        video.srcObject = stream;
-        video.play();
-        requestAnimationFrame(scan);
-    })
-    .catch(() => {
+/* START CAMERA (FIXED FOR GITHUB PAGES) */
+button.addEventListener("click", async () => {
 
-        // fallback (front camera or any available)
-        navigator.mediaDevices.getUserMedia({
-            video: true
-        })
-        .then(stream => {
-            video.srcObject = stream;
-            video.play();
-            requestAnimationFrame(scan);
-        })
-        .catch(err => {
-            alert("Camera access blocked or not supported");
-            console.error(err);
+    try {
+        console.log("Requesting camera...");
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: "environment" } }
         });
 
-    });
-}
+        video.srcObject = stream;
+        await video.play();
 
-/* Better color detection using HSV-ish logic */
+        running = true;
+        requestAnimationFrame(scan);
+
+        console.log("Camera started");
+
+    } catch (err) {
+        console.log("Back camera failed, trying default...", err);
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: true
+            });
+
+            video.srcObject = stream;
+            await video.play();
+
+            running = true;
+            requestAnimationFrame(scan);
+
+        } catch (err2) {
+            console.error(err2);
+            alert("Camera blocked. Please allow permissions in browser settings.");
+        }
+    }
+});
+
+/* BETTER COLOR DETECTION */
 function getColor(r,g,b){
 
     let max = Math.max(r,g,b);
@@ -155,8 +167,8 @@ function getColor(r,g,b){
     let diff = max - min;
 
     if (max < 50) return "Black";
-    if (diff < 20 && max > 200) return "White";
-    if (diff < 20) return "Gray";
+    if (diff < 15 && max > 200) return "White";
+    if (diff < 15) return "Gray";
 
     if (r > g && r > b) {
         if (g > 120) return "Orange";
@@ -164,20 +176,21 @@ function getColor(r,g,b){
     }
 
     if (g > r && g > b) {
-        if (b > 120) return "Cyan/Teal";
+        if (b > 120) return "Teal/Cyan";
         return "Green";
     }
 
-    if (b > r && b > g) {
-        return "Blue";
-    }
+    if (b > r && b > g) return "Blue";
 
     if (r > 200 && g > 200) return "Yellow";
 
     return "Unknown";
 }
 
+/* SCAN LOOP */
 function scan(){
+
+    if(!running) return;
 
     if(video.readyState === 4){
 
@@ -205,7 +218,7 @@ function scan(){
         g = Math.floor(g/total);
         b = Math.floor(b/total);
 
-        let color = getColor(r,g,b);
+        const color = getColor(r,g,b);
 
         nameEl.innerText = "Color: " + color;
         rgbEl.innerText = `RGB: ${r}, ${g}, ${b}`;
