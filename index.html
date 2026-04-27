@@ -117,20 +117,33 @@ const rgbEl = document.getElementById("rgb");
 const preview = document.getElementById("preview");
 
 function start() {
+
     navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { exact: "environment" } }
+        video: {
+            facingMode: { ideal: "environment" }
+        }
     })
     .then(stream => {
         video.srcObject = stream;
+        video.play();
         requestAnimationFrame(scan);
     })
     .catch(() => {
-        alert("Back camera not available. Using default camera.");
-        navigator.mediaDevices.getUserMedia({ video: true })
+
+        // fallback (front camera or any available)
+        navigator.mediaDevices.getUserMedia({
+            video: true
+        })
         .then(stream => {
             video.srcObject = stream;
+            video.play();
             requestAnimationFrame(scan);
+        })
+        .catch(err => {
+            alert("Camera access blocked or not supported");
+            console.error(err);
         });
+
     });
 }
 
