@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ColorAI - Color Blind Assistant</title>
+
+<style>
+    body {
+        margin: 0;
+        background: #000;
+        color: white;
+        font-family: Arial, sans-serif;
+        text-align: center;
+    }
+
+    video {
+        width: 100vw;
+        height: 100vh;
+        object-fit: cover;
+    }
+
+    canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+    }
+
+    .overlay-box {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 200px;
+        height: 200px;
+        transform: translate(-50%, -50%);
+        border: 3px solid white;
+        pointer-events: none;
+    }
+
+    .circle {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 60px;
+        height: 60px;
+        transform: translate(-50%, -50%);
+        border: 3px solid red;
+        border-radius: 50%;
+        pointer-events: none;
+    }
+
+    #result {
+        position: absolute;
+        bottom: 20px;
+        width: 100%;
+        font-size: 20px;
+        background: rgba(0,0,0,0.5);
+        padding: 10px;
+    }
+
+    button {
+        position: absolute;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 10px 20px;
+        font-size: 16px;
+        z-index: 10;
+    }
+</style>
+</head>
+
+<body>
+
+<button onclick="startCamera()">Start Camera</button>
+
+<video id="video" autoplay playsinline></video>
+<canvas id="canvas"></canvas>
+
+<div class="overlay-box"></div>
+<div class="circle"></div>
+
+<div id="result">Color: -</div>
+
+<script>
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const result = document.getElementById("result");
+
+function startCamera() {
+    navigator.mediaDevices.getUserMedia({ video: true })
+    .then(stream => {
+        video.srcObject = stream;
+        requestAnimationFrame(scanColor);
+    })
+    .catch(err => {
+        alert("Camera access denied or not supported");
+        console.error(err);
+    });
+}
+
+function getColorName(r, g, b) {
+    if (r > 200 && g < 80 && b < 80) return "Red";
+    if (g > 200 && r < 80 && b < 80) return "Green";
+    if (b > 200 && r < 80 && g < 80) return "Blue";
+    if (r > 200 && g > 200 && b < 80) return "Yellow";
+    if (r > 200 && g > 100 && b < 100) return "Orange";
+    if (r > 200 && g > 200 && b > 200) return "White";
+    if (r < 50 && g < 50 && b < 50) return "Black";
+    return "Unknown";
+}
+
+function scanColor() {
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // Circle area sampling (center of screen)
+        const size = 60;
+        const x = canvas.width / 2 - size / 2;
+        const y = canvas.height / 2 - size / 2;
+
+        const frame = ctx.getImageData(x, y, size, size);
+        const data = frame.data;
+
+        let r = 0, g = 0, b = 0;
+
+        for (let i = 0; i < data.length; i += 4) {
+            r += data[i];
+            g += data[i + 1];
+            b += data[i + 2];
+        }
+
+        const pixels = data.length / 4;
+        r = Math.floor(r / pixels);
+        g = Math.floor(g / pixels);
+        b = Math.floor(b / pixels);
+
+        const name = getColorName(r, g, b);
+
+        result.innerText = `Color: ${name} (RGB: ${r}, ${g}, ${b})`;
+    }
+
+    requestAnimationFrame(scanColor);
+}
+</script>
+
+</body>
+</html>
