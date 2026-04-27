@@ -74,6 +74,12 @@
             transform: translate(-50%, -50%);
             pointer-events: none;
             box-shadow: 0 0 20px rgba(255,255,255,0.4);
+            transition: border-color 0.3s ease;
+        }
+
+        .flash-active .center-circle {
+            border-color: #fff;
+            box-shadow: 0 0 30px #fff;
         }
 
         .color-preview {
@@ -131,10 +137,15 @@
             border-radius: 12px;
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255,255,255,0.2);
+            margin-bottom: 20px;
         }
 
         .controls {
-            margin-top: 25px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-top: 10px;
         }
 
         .btn {
@@ -142,17 +153,16 @@
             backdrop-filter: blur(10px);
             border: 2px solid rgba(255,255,255,0.3);
             color: white;
-            padding: 15px 30px;
+            padding: 15px 25px;
             border-radius: 25px;
-            font-size: 1rem;
+            font-size: 0.95rem;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.3s ease;
-            min-width: 140px;
             user-select: none;
         }
 
-        .btn:hover {
+        .btn:hover:not(:disabled) {
             background: rgba(255,255,255,0.3);
             transform: translateY(-2px);
             box-shadow: 0 10px 25px rgba(0,0,0,0.2);
@@ -166,6 +176,24 @@
             opacity: 0.5;
             cursor: not-allowed;
             transform: none !important;
+        }
+
+        .flash-btn {
+            background: linear-gradient(45deg, #ff6b6b, #ff8e8e);
+            border-color: rgba(255,107,107,0.6);
+            min-width: 70px;
+            padding: 15px 10px;
+        }
+
+        .flash-btn.active {
+            background: linear-gradient(45deg, #ff4757, #ff6b6b);
+            box-shadow: 0 0 20px rgba(255,71,87,0.6);
+            animation: flashPulse 0.6s infinite;
+        }
+
+        @keyframes flashPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
         }
 
         .status {
@@ -187,6 +215,16 @@
             .color-preview {
                 width: 100px;
                 height: 100px;
+            }
+            
+            .controls {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .btn {
+                width: 100%;
+                max-width: 200px;
             }
         }
 
@@ -211,7 +249,7 @@
         <h1 class="title">ColorAI</h1>
         <p class="subtitle">Real-time color detection for colorblind users</p>
         
-        <div class="video-container">
+        <div class="video-container" id="videoContainer">
             <video id="video" autoplay muted playsinline></video>
             <div class="center-circle"></div>
         </div>
@@ -223,31 +261,41 @@
         
         <div class="controls">
             <button class="btn" id="startBtn">Start Camera</button>
-            <div class="status" id="status"></div>
+            <button class="btn flash-btn" id="flashBtn" disabled>🔦 Flash</button>
         </div>
+        
+        <div class="status" id="status"></div>
     </div>
 
     <script>
         class ColorAI {
             constructor() {
                 this.video = document.getElementById('video');
+                this.videoContainer = document.getElementById('videoContainer');
                 this.colorPreview = document.getElementById('colorPreview');
                 this.colorName = document.getElementById('colorName');
                 this.rgbValues = document.getElementById('rgbValues');
                 this.startBtn = document.getElementById('startBtn');
+                this.flashBtn = document.getElementById('flashBtn');
                 this.status = document.getElementById('status');
                 
                 this.stream = null;
                 this.animationId = null;
                 this.isScanning = false;
+                this.flashTrack = null;
                 this.canvas = document.createElement('canvas');
                 this.ctx = this.canvas.getContext('2d');
+                this.isFlashOn = false;
                 
                 this.init();
             }
             
             async init() {
                 this.startBtn.addEventListener('click', () => this.toggleCamera());
+                this.flashBtn.addEventListener('click', () => this.toggleFlash());
+                
+                // Enable flash button only when camera is active
+                this.flashBtn.disabled = true;
                 this.updateStatus('Ready to scan colors');
             }
             
@@ -265,19 +313,21 @@
                     this.startBtn.textContent = 'Loading...';
                     this.updateStatus('Requesting camera permission...');
                     
-                    // Request camera with specific constraints for performance
                     this.stream = await navigator.mediaDevices.getUserMedia({
                         video: {
                             facingMode: 'environment',
                             width: { ideal: 640 },
                             height: { ideal: 480 }
-                        }
+                        },
+                        audio: false
                     });
                     
                     this.video.srcObject = this.stream;
-                    
-                    // Wait for video to be ready
                     await this.waitForVideoReady();
+                    
+                    // Enable flash button and try to get torch capability
+                    this.flashBtn.disabled = false;
+                    this.checkFlashCapability();
                     
                     this.startBtn.textContent = 'Stop Camera';
                     this.startBtn.disabled = false;
@@ -291,6 +341,7 @@
                     this.updateStatus('Camera access denied or unavailable');
                     this.startBtn.textContent = 'Start Camera';
                     this.startBtn.disabled = false;
+                    this.flashBtn.disabled = true;
                 }
             }
             
@@ -306,14 +357,59 @@
                 }
                 
                 this.isScanning = false;
+                this.isFlashOn = false;
+                this.flashBtn.disabled = true;
+                this.flashBtn.classList.remove('active');
+                this.videoContainer.classList.remove('flash-active');
+                
                 this.startBtn.textContent = 'Start Camera';
                 this.updateStatus('Camera stopped');
                 
-                // Reset UI
                 this.colorPreview.style.background = '#333';
                 this.colorName.textContent = 'Tap Start to begin';
                 this.rgbValues.textContent = 'RGB: --, --, --';
                 this.colorPreview.classList.remove('scanning');
+            }
+            
+            async checkFlashCapability() {
+                const videoTrack = this.stream.getVideoTracks()[0];
+                if (videoTrack && videoTrack.getCapabilities) {
+                    try {
+                        const capabilities = videoTrack.getCapabilities();
+                        if (capabilities.torch) {
+                            this.flashTrack = videoTrack;
+                            this.updateStatus('✅ Flash available - Tap 🔦 for better lighting');
+                            return;
+                        }
+                    } catch (e) {
+                        console.log('Flash capability check failed:', e);
+                    }
+                }
+                this.flashBtn.title = 'Flash not available on this device';
+                this.updateStatus('Scanning center color... (Flash N/A)');
+            }
+            
+            async toggleFlash() {
+                if (!this.flashTrack) return;
+                
+                try {
+                    if (this.isFlashOn) {
+                        await this.flashTrack.applyConstraints({ advanced: [{ torch: false }] });
+                        this.isFlashOn = false;
+                        this.flashBtn.classList.remove('active');
+                        this.videoContainer.classList.remove('flash-active');
+                        this.flashBtn.textContent = '🔦 Flash';
+                    } else {
+                        await this.flashTrack.applyConstraints({ advanced: [{ torch: true }] });
+                        this.isFlashOn = true;
+                        this.flashBtn.classList.add('active');
+                        this.videoContainer.classList.add('flash-active');
+                        this.flashBtn.textContent = '🔦 Off';
+                    }
+                } catch (error) {
+                    console.error('Flash toggle error:', error);
+                    this.updateStatus('Flash not supported');
+                }
             }
             
             waitForVideoReady() {
@@ -344,20 +440,18 @@
             updateColor() {
                 const centerX = Math.floor(this.video.videoWidth / 2);
                 const centerY = Math.floor(this.video.videoHeight / 2);
-                const radius = 20; // Sample area radius
+                const radius = 25; // Slightly larger sampling area for better accuracy
                 
-                // Set canvas size to match video
                 this.canvas.width = this.video.videoWidth;
                 this.canvas.height = this.video.videoHeight;
                 
-                // Draw current video frame
                 this.ctx.drawImage(this.video, 0, 0);
                 
-                // Sample multiple pixels in center area for more accurate color
                 let r = 0, g = 0, b = 0, count = 0;
                 
-                for (let x = centerX - radius; x <= centerX + radius; x += 4) {
-                    for (let y = centerY - radius; y <= centerY + radius; y += 4) {
+                // Sample more densely in center for accuracy
+                for (let x = centerX - radius; x <= centerX + radius; x += 2) {
+                    for (let y = centerY - radius; y <= centerY + radius; y += 2) {
                         if (x >= 0 && x < this.canvas.width && y >= 0 && y < this.canvas.height) {
                             const data = this.ctx.getImageData(x, y, 1, 1).data;
                             r += data[0];
@@ -373,23 +467,16 @@
                 const avgB = Math.round(b / count);
                 
                 const color = `rgb(${avgR}, ${avgG}, ${avgB})`;
-                const hex = this.rgbToHex(avgR, avgG, avgB);
                 const name = this.getColorName(avgR, avgG, avgB);
                 
-                // Update UI
                 this.colorPreview.style.background = color;
                 this.colorPreview.classList.add('scanning');
                 this.colorName.textContent = name;
                 this.rgbValues.textContent = `RGB: ${avgR}, ${avgG}, ${avgB}`;
             }
             
-            rgbToHex(r, g, b) {
-                return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
-            }
-            
             getColorName(r, g, b) {
                 const colors = {
-                    // Primary colors
                     black: [0,0,0],
                     white: [255,255,255],
                     red: [200,50,50],
@@ -401,8 +488,6 @@
                     pink: [255,192,203],
                     brown: [165,42,42],
                     gray: [128,128,128],
-                    
-                    // Shades
                     darkred: [139,0,0],
                     lime: [50,205,50],
                     navy: [0,0,128],
@@ -410,16 +495,16 @@
                     maroon: [128,0,0],
                     teal: [0,128,128],
                     olive: [128,128,0],
-                    
-                    // Pastels
                     lightblue: [173,216,230],
                     lightgreen: [144,238,144],
                     lightpink: [255,182,193],
                     lightyellow: [255,255,224],
-                    lavender: [230,230,250]
+                    lavender: [230,230,250],
+                    cyan: [0,255,255],
+                    magenta: [255,0,255]
                 };
                 
-                let closestColor = 'Unknown';
+                let closestColor = 'Unique Color';
                 let minDiff = Infinity;
                 
                 for (const [name, ref] of Object.entries(colors)) {
@@ -435,11 +520,6 @@
                     }
                 }
                 
-                // Threshold for "unknown" colors
-                if (minDiff > 120) {
-                    return 'Unique Color';
-                }
-                
                 return closestColor.charAt(0).toUpperCase() + closestColor.slice(1);
             }
             
@@ -448,18 +528,8 @@
             }
         }
         
-        // Initialize when page loads
         window.addEventListener('load', () => {
             new ColorAI();
-        });
-        
-        // Handle page visibility change to pause/resume
-        document.addEventListener('visibilitychange', () => {
-            if (document.hidden) {
-                // Pause video when tab is hidden
-                const video = document.getElementById('video');
-                video.pause();
-            }
         });
     </script>
 </body>
